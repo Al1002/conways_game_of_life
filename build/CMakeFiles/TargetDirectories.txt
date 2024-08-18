@@ -1,0 +1,7 @@
+/home/sasho_b/Coding/conway's game of life C++/build/CMakeFiles/edit_cache.dir
+/home/sasho_b/Coding/conway's game of life C++/build/CMakeFiles/rebuild_cache.dir
+/home/sasho_b/Coding/conway's game of life C++/build/src/CMakeFiles/main.dir
+/home/sasho_b/Coding/conway's game of life C++/build/src/CMakeFiles/vects.dir
+/home/sasho_b/Coding/conway's game of life C++/build/src/CMakeFiles/chunks.dir
+/home/sasho_b/Coding/conway's game of life C++/build/src/CMakeFiles/edit_cache.dir
+/home/sasho_b/Coding/conway's game of life C++/build/src/CMakeFiles/rebuild_cache.dir

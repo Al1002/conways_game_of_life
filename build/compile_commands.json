@@ -1,0 +1,17 @@
+[
+{
+  "directory": "/home/sasho_b/Coding/conway's game of life C++/build/src",
+  "command": "/usr/bin/g++   -g -pg -std=gnu++17 -o CMakeFiles/main.dir/main.cpp.o -c \"/home/sasho_b/Coding/conway's game of life C++/src/main.cpp\"",
+  "file": "/home/sasho_b/Coding/conway's game of life C++/src/main.cpp"
+},
+{
+  "directory": "/home/sasho_b/Coding/conway's game of life C++/build/src",
+  "command": "/usr/bin/g++  -I\"/home/sasho_b/Coding/conway's game of life C++/src/.\" -g -pg -std=gnu++17 -o CMakeFiles/vects.dir/vects.cpp.o -c \"/home/sasho_b/Coding/conway's game of life C++/src/vects.cpp\"",
+  "file": "/home/sasho_b/Coding/conway's game of life C++/src/vects.cpp"
+},
+{
+  "directory": "/home/sasho_b/Coding/conway's game of life C++/build/src",
+  "command": "/usr/bin/g++  -I\"/home/sasho_b/Coding/conway's game of life C++/src/.\" -g -pg -std=gnu++17 -o CMakeFiles/chunks.dir/chunks.cpp.o -c \"/home/sasho_b/Coding/conway's game of life C++/src/chunks.cpp\"",
+  "file": "/home/sasho_b/Coding/conway's game of life C++/src/chunks.cpp"
+}
+]

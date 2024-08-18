@@ -1,0 +1,12 @@
+An implementation of conway's game of life, in the C++ programming language.
+
+Functional goals:
+An API for using the game in other projects.
+A GUI which uses said API to actually see the game running.
+A space with a vast ammount of area (at least 1K/1Kp)
+
+Technical:
+Fast iteration.
+Memory optimizations.
+
+

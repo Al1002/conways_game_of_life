@@ -1,0 +1,1 @@
+gprof build/src/main gmon.out > analisys.txt

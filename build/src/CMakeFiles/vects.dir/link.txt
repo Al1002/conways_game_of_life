@@ -1,0 +1,2 @@
+/usr/bin/ar qc libvects.a CMakeFiles/vects.dir/vects.cpp.o
+/usr/bin/ranlib libvects.a
