@@ -243,7 +243,7 @@ void print_board(const BoolChunk &c)
     std::cout<<"\n";
 }
 
-BoolChunkLoader* run_simulation(BoolChunkLoader start, int viewport_size, int simulation_len,  float tick_rate, bool graphics)
+BoolChunkLoader* run_simulation(BoolChunkLoader start, int viewport_size, int simulation_len,  float tick_delay, bool graphics)
 {
     BoolChunkLoader *front = new BoolChunkLoader(start), *back = new BoolChunkLoader;
     for(int i = 0; i != simulation_len; i++)
@@ -254,8 +254,8 @@ BoolChunkLoader* run_simulation(BoolChunkLoader start, int viewport_size, int si
         BoolChunkLoader *swap = front;
         front = back;
         back = swap;
-        if(tick_rate)
-            usleep(tick_rate * (1<<20));
+        if(tick_delay)
+            usleep(tick_delay * (1<<20));
     }
     delete front;
     return back;

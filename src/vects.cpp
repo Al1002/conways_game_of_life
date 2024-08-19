@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include <hashtable.h>
-#include <initializer_list>
 #include <exception>
 #include <type_traits>
 #include <iostream> // cout

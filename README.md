@@ -1,20 +1,28 @@
 A C++ implementation of Conway's game of life.
 
-Includes some generic classes of questionable quality.
+Includes some generic classes of questionable quality + Template Meta Programming.
 
-Use `./build/main` to run
+Use  `cmake -S src -B build` to build
 
 and
 
-`cmake -S src -B build` to build
+`./build/src/main` to run
 
 `./profiler.sh` - script to view performance with gprof + gprof2dot + xdot. Only works when compiled in debug mode.
 
 This was a technical test for semi-optimized code and usage of a profiler.
+A side effect was learning performance pitfalls. Specifically indirection, inefficient IO and helping the compiler by hinting at how variables are used. 
 
 Saddly, the work lacks a commit history
 
+Concrete implementations in vects.cpp and chunks.cpp can be exported and compiled down to actuall libraries.
+As-is, we are butchering the compiler by just including everything.
+Im unsure as to why 20 percent of the program is spent on Vect2i::Vect2i::operation- and argument constructor.
+
+------
+
 Copyright 2024 by Sasho B
+
 All rights reserved.
 Unauthorized use, reproduction, or distribution of this code will be persued to the fullest extent of the law.
 
