@@ -2,16 +2,16 @@
 #include <stdlib.h>
 #include <unordered_map>
 
-inline void set_bit(unsigned char *byte, int offset, bool val) 
+inline void set_bit(unsigned char &byte, int offset, bool val) 
 {
     // Helper
     if(val)
-        *byte = *byte | (1 << offset);
+        byte = byte | (1 << offset);
     else
-        *byte = *byte & ~(1 << offset);
+        byte = byte & ~(1 << offset);
 }
 
-inline bool get_bit(unsigned char byte, int offset)
+inline bool get_bit(const unsigned char &byte, int offset)
 {
     //Helper
     return (byte >> offset) & 1;
@@ -24,8 +24,8 @@ class BoolGrid2D
      * 
      */
 public:
-    virtual bool get(Vect2i pos) const = 0;
-    virtual void set(Vect2i pos, bool val) = 0;
+    virtual bool get(const Vect2i &pos) const = 0;
+    virtual void set(const Vect2i &pos, bool val) = 0;
 };
 
 class BoolChunk : public BoolGrid2D
@@ -38,26 +38,6 @@ public:
 private:
     unsigned char bytes[chunk_size];
 
-    // convoluted and slow, replace with bulk operations
-    inline bool read(int x, int y) const
-    {
-        // unsafe
-        int offset = x % 8;
-        x -= offset;
-        x = x / 8;
-        unsigned char byte = bytes[x + y * side_len];
-        return get_bit(byte, offset);
-    }
-
-    inline void write(int x, int y, bool val)
-    {
-        // unsafe
-        int offset = x % 8;
-        x = x / 8;
-        unsigned char *byte = &bytes[x + y * side_len];
-        set_bit(byte, offset, val);
-    }
-
 public:
     BoolChunk()
     {
@@ -69,16 +49,20 @@ public:
         int hits = 0;
     }
 
-    bool get(Vect2i pos) const override
+    bool get(const Vect2i &pos) const override
     {
         // unsafe
-        return read(pos.x, pos.y);
+        // math is y rows * bytes per row (side_len) + x/8 bytes + x%8 bits
+        const unsigned char *byte = &bytes[(pos.x >> 3) + pos.y * side_len];
+        return get_bit(*byte, pos.x & (8 - 1));
     }
 
-    void set(Vect2i pos, bool val) override
+    void set(const Vect2i &pos, bool val) override
     {
         // unsafe
-        write(pos.x, pos.y, val);
+        // math is y rows * bytes per row (side_len) + x/8 bytes + x%8 bits
+        unsigned char *byte = &bytes[(pos.x >> 3) + pos.y * side_len];
+        return set_bit(*byte, pos.x & (8 - 1), val);
     }
 };
 
@@ -86,22 +70,16 @@ class BoolChunkLoader : public BoolGrid2D
 {
 private:
     mutable std::unordered_map<Vect2i, BoolChunk*> chunks;
-    //std::unordered_map<int, int> chunki;
+    mutable Vect2i hot_pos;
+    mutable BoolChunk* hot_pointer;
 public:
-    bool get(Vect2i pos) const override
+    BoolChunkLoader()
     {
-        Vect2i local_pos = {pos.x % BoolChunk::side_len_b, pos.y % BoolChunk::side_len_b};
-        if(local_pos.x < 0)
-            local_pos.x += BoolChunk::side_len_b;
-        if(local_pos.y < 0)
-            local_pos.y += BoolChunk::side_len_b;
-        Vect2i chunk_pos = pos - local_pos;
-        if(chunks.find(chunk_pos) == chunks.end())
-            return 0;
-        return chunks.at(chunk_pos)->get(local_pos);
+        hot_pointer = new BoolChunk();
+        chunks.insert({{0,0},hot_pointer});
     }
 
-    void set(Vect2i pos, bool val) override
+    bool get(const Vect2i &pos) const override
     {
         Vect2i local_pos = {pos.x % BoolChunk::side_len_b, pos.y % BoolChunk::side_len_b};
         if(local_pos.x < 0)
@@ -109,10 +87,43 @@ public:
         if(local_pos.y < 0)
             local_pos.y += BoolChunk::side_len_b;
         Vect2i chunk_pos = pos - local_pos;
-        auto chunk = chunks.find(chunk_pos);
-        if(chunk == chunks.end())
-            chunks.insert({chunk_pos, new BoolChunk()});
-        return chunks.at(chunk_pos)->set(local_pos, val);
+        if(chunk_pos == hot_pos)
+            return hot_pointer->get(local_pos);
+        BoolChunk* chunk;
+        auto querry = chunks.find(chunk_pos);
+        if (querry == chunks.end())
+            return 0;
+        else
+        {
+            hot_pos = querry->first;
+            hot_pointer = querry->second;
+            return querry->second->get(local_pos);
+        }
+    }
+
+    void set(const Vect2i &pos, bool val) override
+    {
+        Vect2i local_pos = {pos.x % BoolChunk::side_len_b, pos.y % BoolChunk::side_len_b};
+        if(local_pos.x < 0)
+            local_pos.x += BoolChunk::side_len_b;
+        if(local_pos.y < 0)
+            local_pos.y += BoolChunk::side_len_b;
+        Vect2i chunk_pos = pos - local_pos;
+        if(chunk_pos == hot_pos)
+        {
+            hot_pointer->set(local_pos, val);
+            return;
+        }
+        BoolChunk* chunk;
+        auto querry = chunks.find(chunk_pos);
+        if (querry == chunks.end())
+        {
+            chunk = new BoolChunk();
+            chunks.insert({chunk_pos, chunk});
+        }
+        else
+            chunk = querry->second;
+        chunk->set(local_pos, val);
     }
     std::unordered_map<Vect2i, BoolChunk*> getChunkMap()
     {

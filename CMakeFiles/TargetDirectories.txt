@@ -1,5 +1,0 @@
-/home/sasho_b/Coding/conway's game of life C++/CMakeFiles/edit_cache.dir
-/home/sasho_b/Coding/conway's game of life C++/CMakeFiles/rebuild_cache.dir
-/home/sasho_b/Coding/conway's game of life C++/src/CMakeFiles/main.dir
-/home/sasho_b/Coding/conway's game of life C++/src/CMakeFiles/edit_cache.dir
-/home/sasho_b/Coding/conway's game of life C++/src/CMakeFiles/rebuild_cache.dir

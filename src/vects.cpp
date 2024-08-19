@@ -205,39 +205,38 @@ class Vect2 : public Vect
      */
 public:
     Num x, y;
-    Vect2()
+    inline Vect2()
     {
         x = 0;
         y = 0;
     }
-    Vect2(int x, int y)
+    inline Vect2(const Num& x, const Num& y)
     {
         this->x = x;
         this->y = y;
     }
-    
-    Vect2 operator+(const Vect2& other)
+    inline Vect2 operator+(const Vect2& other) const
     {
-        return Vect2(x + other.x, y + other.y);
+        return {x + other.x, y + other.y};
     }
-    Vect2 operator-(const Vect2& other)
+    inline Vect2 operator-(const Vect2& other) const
     {
-        return Vect2(x - other.x, y - other.y);
+        return {x - other.x, y - other.y};
     }
-    Vect2 operator*(Num scalar)
+    inline Vect2 operator*(const Num& scalar) const
     {
-        return Vect2(x * scalar, y * scalar);
+        return {x * scalar, y * scalar};
     }
-    Vect2 operator/(Num scalar)
+    inline Vect2 operator/(const Num& scalar) const
     {
-        return Vect2(x / scalar, y / scalar);
+        return {x / scalar, y / scalar};
     }
     
     size_t hash() const
     {
         return ~(std::hash<Num>()(x) ^ ~(std::hash<Num>()(y))); 
     }
-    bool operator==(const Vect2& other) const
+    inline bool operator==(const Vect2& other) const
     {
         return other.x == x && other.y == y;
     }
