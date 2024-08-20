@@ -1,6 +1,7 @@
 #include "vects.cpp"
 #include <stdlib.h>
 #include <unordered_map>
+#include <cstring>
 
 inline void set_bit(unsigned char &byte, int offset, bool val) 
 {
@@ -36,17 +37,14 @@ public:
     static const int chunk_size = chunk_size_b / 8;
     static const int side_len = side_len_b / 8;
 private:
-    unsigned char bytes[chunk_size];
 
 public:
+    unsigned char bytes[chunk_size];
+
     BoolChunk()
     {
-        // aprox 8x faster than chars
-        for (int i = 0; i < chunk_size/sizeof(long long); i++)
-        {
-            ((long long*)bytes)[i] = 0;
-        }
-        int hits = 0;
+        // wipe with 0s
+        memset(bytes, 0, sizeof(bytes));
     }
 
     bool get(const Vect2i &pos) const override
@@ -64,6 +62,33 @@ public:
         unsigned char *byte = &bytes[(pos.x >> 3) + pos.y * side_len];
         return set_bit(*byte, pos.x & (8 - 1), val);
     }
+
+};
+
+class UnpackedBoolChunk : public BoolGrid2D
+{
+public:
+    static const int side_len = BoolChunk::side_len_b;
+
+private:
+    bool cells[side_len][side_len];
+
+public:
+    UnpackedBoolChunk()
+    {
+        // wipe with 0s
+        memset(cells, 0, sizeof(cells));
+    }
+
+    bool get(const Vect2i &pos) const override
+    {
+        return cells[pos.x][pos.y];
+    }
+
+    void set(const Vect2i &pos, bool val) override
+    {
+        cells[pos.x][pos.y] = val;
+    }
 };
 
 class BoolChunkLoader : public BoolGrid2D
@@ -79,6 +104,7 @@ public:
         chunks.insert({{0,0},hot_pointer});
     }
 
+    // Very slow, use bulk instead
     bool get(const Vect2i &pos) const override
     {
         Vect2i local_pos = {pos.x % BoolChunk::side_len_b, pos.y % BoolChunk::side_len_b};
@@ -101,6 +127,7 @@ public:
         }
     }
 
+    // Very slow, use bulk instead
     void set(const Vect2i &pos, bool val) override
     {
         Vect2i local_pos = {pos.x % BoolChunk::side_len_b, pos.y % BoolChunk::side_len_b};
@@ -125,10 +152,61 @@ public:
             chunk = querry->second;
         chunk->set(local_pos, val);
     }
+
+    UnpackedBoolChunk get_unpacked_chunk(const Vect2i &chunk_pos) const
+    {
+        auto querry = chunks.find(chunk_pos);
+        if (querry == chunks.end())
+            throw std::exception(); // Cant unpack non-existant chunk
+        UnpackedBoolChunk rval;
+        const BoolChunk& chunk = *querry->second;
+        for(int y = 0; y < BoolChunk::side_len_b; y++)
+        {
+            for(int x = 0; x < BoolChunk::side_len; x++)
+            {
+                unsigned char byte = chunk.bytes[x + y * BoolChunk::side_len];
+                for(int i = 0; i < 8; i++)
+                {
+                    rval.set({x*8+i,y},byte & 1);
+                    byte = byte >> 1;
+                }
+            }
+        }
+        return rval;
+    }
+
+    void set_unpacked_chunk(const Vect2i &chunk_pos, const UnpackedBoolChunk &uchunk)
+    {
+        auto querry = chunks.find(chunk_pos);
+        BoolChunk* chunk_p;
+        if (querry == chunks.end())
+        {
+            chunk_p = new BoolChunk();
+            chunks.insert({chunk_pos, chunk_p});
+        }
+        else
+            chunk_p = querry->second;
+        BoolChunk& chunk = *chunk_p;
+        for(int y = 0; y < BoolChunk::side_len_b; y++)
+        {
+            for(int x = 0; x < BoolChunk::side_len; x++)
+            {
+                unsigned char byte = 0;
+                for(int i = 7; i != 0; i--)
+                {
+                    byte = byte | uchunk.get({x*8+i, y});
+                    byte = byte << 1;
+                }
+                chunk.bytes[x + y * BoolChunk::side_len] = byte;
+            }
+        }
+    }
+
     std::unordered_map<Vect2i, BoolChunk*> getChunkMap()
     {
         return chunks;
     }
+
 };
 
 template<class Interface, class ConcreteClass>

@@ -3,6 +3,8 @@
 #include <unistd.h>
 #include "chunks.cpp"
 
+void print_board_compact(const BoolGrid2D&, int);
+
 inline int sum_neighbours(const BoolGrid2D &c, const int x, const int y)
 {
     int sum = 0;
@@ -22,7 +24,7 @@ inline int sum_triect(const BoolGrid2D &c, const int x, const int y)
     return c.get({x, y - 1}) + c.get({x, y}) + c.get({x, y + 1});
 }
 
-inline void conways_rules(BoolGrid2D &to, BoolGrid2D &from, const int neighbours, const int x, const int y)
+inline void conways_rules(BoolGrid2D &to, const BoolGrid2D &from, const int neighbours, const int x, const int y)
 {
     if(neighbours < 2)
         to.set({x, y}, 0);
@@ -42,6 +44,39 @@ inline void try_load(BoolChunkLoader &to, BoolChunkLoader &from, const int sum, 
     }
 }
 
+
+// Iteration over chunk insides, thus removing cross-chunk reads (cache miss)
+void process_chunk_insides(const UnpackedBoolChunk &from, UnpackedBoolChunk &result)
+{
+    for(int y = 1; y < BoolChunk::side_len_b - 1; y++)
+    {
+    // setup
+    auto sum_triect = [&](int x, int y) -> int
+    {
+        return from.get({x, y - 1}) + from.get({x, y}) + from.get({x, y + 1});
+    };
+    int triect[3], triect_iter = 0;
+    triect[1] = sum_triect(0, y);
+    triect[2] = sum_triect(1, y);
+        for(int x = 1; x < BoolChunk::side_len_b - 1; x++)
+        {
+            // rolling buffer
+            triect[triect_iter++] = sum_triect(x + 1, y);
+            if(triect_iter > 2)
+                triect_iter = 0;
+            int sum = triect[0] + triect[1] + triect[2];
+            if(sum == 0) // if completely empty
+            {
+                if(result.get({x, y}) == 1)
+                    result.set({x, y}, 0);
+                continue;
+            }
+            sum -= from.get({x, y});
+            conways_rules(result, from, sum, x, y);
+        }
+    }
+}
+
 // stores sum of 3 cells in a rolling buffer, re-using read data 2/3rds of the time
 // 1010
 // 0011 
@@ -54,36 +89,11 @@ void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
     // iterate over all chunks
     for(auto iter = map.begin(); iter != map.end(); ++iter)
     {
-    const Vect2i &chunk_pos = iter->first;
-    // BoolChunk &chunk = *iter->second;
-    // Iteration over chunk insides, thus removing cross-chunk reads (cache miss)
-    for(int i = 1; i < BoolChunk::side_len_b - 1; i++)
-    {
-        // setup
-        int y = i + chunk_pos.y;
-        int triect[3], triect_iter = 0;
-        triect[1] = sum_triect(from, chunk_pos.x, y);
-        triect[2] = sum_triect(from, chunk_pos.x + 1, y);
-        for(int j = 1; j < BoolChunk::side_len_b - 1; j++)
-        {
-            // convert relative to actuall co-ords
-            int x = j + chunk_pos.x;
-            // rolling buffer
-            triect[triect_iter++] = sum_triect(from, x + 1, y);
-            if(triect_iter > 2)
-                triect_iter = 0;
-            int sum = triect[0] + triect[1] + triect[2];
-            if(sum == 0) // if completely empty
-            {
-                if(to.get({x, y}) == 1)
-                    to.set({x, y}, 0);
-                continue;
-            }
-            sum -= from.get({x, y});
-            conways_rules(to, from, sum, x, y);
-        }
-    }
-    // for edges (complex)
+        Vect2i chunk_pos = iter->first;
+        UnpackedBoolChunk result;
+        process_chunk_insides(from.get_unpacked_chunk(chunk_pos), result);
+        to.set_unpacked_chunk(chunk_pos, result);
+    // for edges (slow)
     for (int i = 0; i < BoolChunk::side_len_b; i++)
     {
         // Conway's rulles + loading in neighbour chunks
@@ -92,57 +102,60 @@ void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
         y = chunk_pos.y + 0; // up
         sum = sum_neighbours(from, x, y);
         conways_rules(to, from, sum, x, y);
-        sum = sum_neighbours(from, x, y - 1);
-        try_load(to, from, sum, x, y - 1);
         
         x = chunk_pos.x + 0; // left
         y = chunk_pos.y + i; 
         sum = sum_neighbours(from, x, y);
         conways_rules(to, from, sum, x, y);
-        sum = sum_neighbours(from, x - 1, y);
-        try_load(to, from, sum, x - 1, y);
         
         x = chunk_pos.x + i;
         y = chunk_pos.y + BoolChunk::side_len_b - 1; // down
         sum = sum_neighbours(from, x, y);
         conways_rules(to, from, sum, x, y);
-        sum = sum_neighbours(from, x, y + 1);
-        try_load(to, from, sum, x, y + 1);
         
         x = chunk_pos.x + BoolChunk::side_len_b - 1; // right
         y = chunk_pos.y + i; 
         sum = sum_neighbours(from, x, y);
         conways_rules(to, from, sum, x, y);
-        sum = sum_neighbours(from, x + 1, y);
-        try_load(to, from, sum, x + 1, y);
+        //sum = sum_neighbours(from, x, y - 1);
+        //try_load(to, from, sum, x, y - 1);
+        //sum = sum_neighbours(from, x - 1, y);
+        //try_load(to, from, sum, x - 1, y);
+        //sum = sum_neighbours(from, x, y + 1);
+        //try_load(to, from, sum, x, y + 1);
+        //sum = sum_neighbours(from, x + 1, y);
+        //try_load(to, from, sum, x + 1, y);
     }
     
     }
 }
 
-void tick(BoolChunkLoader &from, BoolChunkLoader &to)
-{
-    auto map = from.getChunkMap();
-    for(auto iter = map.begin(); iter != map.end(); ++iter)
-    for(int i = iter->first.x; i < iter->first.x + iter->second->side_len_b; i++)
-    {
-        for(int j = iter->first.y; j < iter->first.y + iter->second->side_len_b; j++)
-        {
-            int sum = sum_neighbours(from, i, j);
-            if (sum == 0)
-            {
-                to.set({i, j}, 0);
-                continue;
+/**
+ * @brief std::vector<Edge> findEdgesBetweenLiveAndUnaliveCells(const std::unordered_map<Vect2Dint, bool>& liveCells) {
+    std::vector<Edge> edges;
+    
+    // Define the 4 possible neighbors (left, right, top, bottom)
+    std::vector<Vect2Dint> neighbors = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+    
+    // Iterate over all live cells
+    for (const auto& cellPair : liveCells) {
+        const Vect2Dint& liveCell = cellPair.first;
+        
+        // Check all 4 neighbors
+        for (const Vect2Dint& offset : neighbors) {
+            Vect2Dint neighborCell = {liveCell.x + offset.x, liveCell.y + offset.y};
+            
+            // If neighbor cell is not in the liveCells map, it is an unalive cell
+            if (liveCells.find(neighborCell) == liveCells.end()) {
+                edges.push_back({liveCell, neighborCell});
             }
-            if (sum == 2)
-                to.set({i, j}, from.get({i, j}));
-            else if (sum == 3)
-                to.set({i, j}, 1);
-            else 
-                to.set({i, j}, 0);
         }
     }
+    
+    return edges;
 }
+ * 
+ */
 
     // Diehard OLD
     //arr[front][11][13] = 1;
@@ -165,25 +178,25 @@ void tick(BoolChunkLoader &from, BoolChunkLoader &to)
 void set_acorn(BoolGrid2D &&c)
 {
     // Acorn
-    c.set(Vect2i(10,12), 1);
-    c.set(Vect2i(11,14), 1);
-    c.set(Vect2i(12,11), 1);
-    c.set(Vect2i(12,12), 1);
-    c.set(Vect2i(12,15), 1);
-    c.set(Vect2i(12,16), 1);
-    c.set(Vect2i(12,17), 1);
+    c.set(Vect2i(0,2), 1);
+    c.set(Vect2i(1,4), 1);
+    c.set(Vect2i(2,1), 1);
+    c.set(Vect2i(2,2), 1);
+    c.set(Vect2i(2,5), 1);
+    c.set(Vect2i(2,6), 1);
+    c.set(Vect2i(2,7), 1);
 }
 
 void set_acorn(BoolGrid2D &c)
 {
     // Acorn
-    c.set(Vect2i(10,12), 1);
-    c.set(Vect2i(11,14), 1);
-    c.set(Vect2i(12,11), 1);
-    c.set(Vect2i(12,12), 1);
-    c.set(Vect2i(12,15), 1);
-    c.set(Vect2i(12,16), 1);
-    c.set(Vect2i(12,17), 1);
+    c.set(Vect2i(0,2), 1);
+    c.set(Vect2i(1,4), 1);
+    c.set(Vect2i(2,1), 1);
+    c.set(Vect2i(2,2), 1);
+    c.set(Vect2i(2,5), 1);
+    c.set(Vect2i(2,6), 1);
+    c.set(Vect2i(2,7), 1);
 }
 
 void set_glider(BoolGrid2D &&c)
@@ -199,9 +212,9 @@ void set_glider(BoolGrid2D &&c)
 void print_board_compact(const BoolGrid2D &c, int viewport_size)
 {
     printf("\033c");
-    for(int y = -(viewport_size/2); y<viewport_size/2; y+=2)
+    for(int y = 0; y<viewport_size; y+=2)
     {
-        for(int x = -(viewport_size/2); x<viewport_size/2; x++)
+        for(int x = 0; x<viewport_size; x++)
         {
             int opcode = c.get({x,y})+c.get({x,y+1})*2;
             switch (opcode)
@@ -218,6 +231,8 @@ void print_board_compact(const BoolGrid2D &c, int viewport_size)
             case 3:
                 std::cout<<':';
                 break;
+            default:
+                std::cout<<'X';
             }
         }
         std::cout<<"|\n";
@@ -229,37 +244,6 @@ void print_board_compact(const BoolGrid2D &c, int viewport_size)
     std::cout<<"\n";
 }
 
-void print_board(const BoolChunk &c)
-{
-    printf("\033c");
-    for(int y = 0; y<c.side_len_b; y++)
-    {
-        for(int x = 0; x<c.side_len_b; x++)
-        {
-            std::cout<<(int)c.get({x,y});
-        }
-        std::cout<<"\n";
-    }
-    std::cout<<"\n";
-}
-
-BoolChunkLoader* run_simulation(BoolChunkLoader start, int viewport_size, int simulation_len,  float tick_delay, bool graphics)
-{
-    BoolChunkLoader *front = new BoolChunkLoader(start), *back = new BoolChunkLoader;
-    for(int i = 0; i != simulation_len; i++)
-    {
-        if(graphics)
-            print_board_compact(*front, viewport_size);
-        tick_optimized(*front, *back);
-        BoolChunkLoader *swap = front;
-        front = back;
-        back = swap;
-        if(tick_delay)
-            usleep(tick_delay * (1<<20));
-    }
-    delete front;
-    return back;
-}
 
 // find way to have infinite growth (ex: view + mem chunk loader)
 // a custom chunk loader sounds funny
@@ -289,15 +273,57 @@ public:
     }
 };
 
+BoolChunkLoader* run_simulation(BoolChunkLoader start, int viewport_size, int simulation_len,  float tick_delay, bool graphics)
+{
+    BoolChunkLoader *front = new BoolChunkLoader(start), *back = new BoolChunkLoader;
+    for(int i = 0; i != simulation_len; i++)
+    {
+        if(graphics)
+            print_board_compact(Offset2D(front, {-32, -32}), viewport_size);
+        tick_optimized(*front, *back);
+        BoolChunkLoader *swap = front;
+        front = back;
+        back = swap;
+        if(tick_delay)
+            usleep(tick_delay * (1<<20));
+    }
+    delete front;
+    return back;
+}
+
 int main(int argc, char **argv)
 {
     BoolChunkLoader start;
-    set_acorn(Offset2D(&start, {-10, -10}));
-    print_board_compact(start, 50);
-    auto result = run_simulation(start, 50, 1000, 0, false);
-    print_board_compact(*result, 50);
+    set_acorn(Offset2D(&start, {0, 0}));
+    //start.set({1,2}, 1);
+    //start.set({2,2}, 1);
+    //start.set({3,2}, 1);
+    print_board_compact(Offset2D(&start, {-32,-32}),64);
+    auto result = run_simulation(start, 64, 100, 0, false);
+    print_board_compact(Offset2D(result, {-32,-32}), 64);
+    print_board_compact(Offset2D(&start, {-32,-32}),64);
+    auto result = run_simulation(start, 64, 100, 0, false);
+    print_board_compact(Offset2D(result, {-32,-32}), 64);
+    
     return 0;
 }
 
 // Unrelated: why not write in C?
 // it has strict types, strict syntax, just write endpoints here
+
+/* Pipeline:
+For each chunk:
+    Unpack insides into more processable data
+    Process in triacts
+    Re-pack insides
+    Save
+
+For each chunk:
+    Process edges (slow)
+
+For unbound chunk detection:
+    Review all unbound chunk edges for processing
+    Select edges for processing:
+        Load chunks where needed
+
+*/
