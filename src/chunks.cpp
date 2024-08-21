@@ -145,6 +145,8 @@ public:
         auto querry = chunks.find(chunk_pos);
         if (querry == chunks.end())
         {
+            if(val == 0) // lazy loading not broken by set(0)
+                return;
             chunk = new BoolChunk();
             chunks.insert({chunk_pos, chunk});
         }
@@ -192,10 +194,9 @@ public:
             for(int x = 0; x < BoolChunk::side_len; x++)
             {
                 unsigned char byte = 0;
-                for(int i = 7; i != 0; i--)
+                for(int i = 0; i < 8; i++)
                 {
-                    byte = byte | uchunk.get({x*8+i, y});
-                    byte = byte << 1;
+                    byte |= uchunk.get({x*8+i, y}) << i; // endiannes matters
                 }
                 chunk.bytes[x + y * BoolChunk::side_len] = byte;
             }
