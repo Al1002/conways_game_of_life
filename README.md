@@ -21,11 +21,13 @@ Saddly, the work lacks a propper commit history.
 Concrete implementations in vects.cpp and chunks.cpp can be exported and compiled down to actual libraries.
 As-is, we are butchering the compiler by just including everything.
 Im unsure as to why 20 percent of the program is spent on `Vect2i::Vect2i::operation-` and argument constructor.
-Also, over 200% percent of IOs (in this case it isnt really an IO, but the data is in a byte array in a hash table so might as well be) are redundant. This is a stagering reduction from over 900% percent. This was resolved by processing the insides of a chunk without the edges, plus storing sums in collumns of 3 cells. As im writing this, one way to optimize this code is to just side-step the indirection of ChunkLoader while doing this. Also the  `tick_optimized()` function is an eye-sore.
+Also, over 200% percent of IOs (in this case it isnt really an IO, but the data is in a byte array in a hash table so might as well be) are redundant. This is a stagering reduction from over 900% percent. This was resolved by processing the insides of a chunk without the edges, plus storing sums in collumns of 3 cells. As im writing this, one way to optimize this code is to just side-step the indirection of BoolChunkLoader while doing this. Also the  `tick_optimized()` function is an eye-sore.
 
 To go on, 2 chunks easily fit into 4KB, and given the 2 switching buffers design, just fusing chunk-loader to and from into one entity, allocating 2x chunks, is not a terrible option. 
 
 Update: If ive not forgotter to push it, the edge update in the lambda is broken. The code is hard to debug and the fastest way to do so is via print_board_compact, as it can accept all BoolGrid2D objects.
+
+Update: stop writing notes in readme. Also fixed code via better lazy operations in BoolChunkLoader::set().
 
 ------
 
