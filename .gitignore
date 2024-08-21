@@ -1,5 +1,5 @@
 gmon.out
 analisys*
-callgring*
+callgrind*
 build/
 .vscode/

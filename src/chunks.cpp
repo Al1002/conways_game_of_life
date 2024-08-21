@@ -36,6 +36,8 @@ public:
     static const int side_len_b = 1 << 6; // 64 rows or 8 octets
     static const int chunk_size = chunk_size_b / 8;
     static const int side_len = side_len_b / 8;
+    int updated = 0;
+    int cold = 0;
 private:
 
 public:
@@ -74,9 +76,11 @@ private:
     bool cells[side_len][side_len];
 
 public:
+    int updated;
     UnpackedBoolChunk()
     {
         // wipe with 0s
+        updated = 0;
         memset(cells, 0, sizeof(cells));
     }
 
@@ -87,6 +91,8 @@ public:
 
     void set(const Vect2i &pos, bool val) override
     {
+        if(val == 1)
+            updated++;
         cells[pos.x][pos.y] = val;
     }
 };
@@ -157,10 +163,10 @@ public:
 
     UnpackedBoolChunk get_unpacked_chunk(const Vect2i &chunk_pos) const
     {
+        UnpackedBoolChunk rval;
         auto querry = chunks.find(chunk_pos);
         if (querry == chunks.end())
-            throw std::exception(); // Cant unpack non-existant chunk
-        UnpackedBoolChunk rval;
+            return rval; // just shimmy it up
         const BoolChunk& chunk = *querry->second;
         for(int y = 0; y < BoolChunk::side_len_b; y++)
         {
@@ -189,6 +195,8 @@ public:
         else
             chunk_p = querry->second;
         BoolChunk& chunk = *chunk_p;
+        if(uchunk.updated == 0 && chunk.updated == 0)
+            return;
         for(int y = 0; y < BoolChunk::side_len_b; y++)
         {
             for(int x = 0; x < BoolChunk::side_len; x++)

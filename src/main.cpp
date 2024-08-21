@@ -3,20 +3,20 @@
 #include <unistd.h>
 #include "chunks.cpp"
 
-class Offset2D : public Decorator<BoolGrid2D, BoolChunkLoader>
+class Offset2D : public Decorator<BoolGrid2D, BoolGrid2D>
 {
     Vect2i offset;
 public:
-    Offset2D(BoolChunkLoader *decorated, Vect2i offset) 
+    Offset2D(BoolGrid2D *decorated, Vect2i offset) 
     {
         this->decorated = decorated;
         this->offset = offset;
     }
-    bool get(const Vect2i &pos) const override
+    inline bool get(const Vect2i &pos) const override
     {
         return decorated->get(pos+offset);
     }
-    void set(const Vect2i &pos, bool val) override
+    inline void set(const Vect2i &pos, bool val) override
     {
         decorated->set(pos+offset, val);
     }
@@ -103,70 +103,47 @@ void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
         // for insides
         UnpackedBoolChunk result;
         process_chunk_insides(from.get_unpacked_chunk(chunk_pos), result);
-        to.set_unpacked_chunk(chunk_pos, result);
         // for edges + loading
-        auto process_edge = [&](int xoffset, int yoffset, int dx, int dy)
+        auto process_edge = [&](int xoffset, int yoffset, int dx, int dy, BoolGrid2D& to)
         {
             auto sum_triect = [&](int x, int y) -> int
             {
                 return from.get({x - dy, y - dx}) + from.get({x, y}) + from.get({x + dy, y + dx});
             };
-            int x = chunk_pos.x + xoffset;
-            int y = chunk_pos.y + yoffset;
+            int x = xoffset;
+            int y = yoffset;
             int triect[3], triect_iter = 0;
             triect[1] = sum_triect(x - dx, y - dy);
             triect[2] = sum_triect(x, y);
             for (int i = 0; i < BoolChunk::side_len_b; i++)
             {
-                x = chunk_pos.x + xoffset + i * dx;
-                y = chunk_pos.y + yoffset + i * dy;
+                x = xoffset + i * dx;
+                y = yoffset + i * dy;
                 triect[triect_iter++] = sum_triect(x + dx, y + dy);
                 if(triect_iter > 2)
                     triect_iter = 0;
                 int sum = triect[0] + triect[1] + triect[2];
+                //if(sum == 0 && to.get({x, y}) == 0) // skip
+                //    continue;
                 sum -= from.get({x,y});
                 conways_rules(to, from, sum, x, y);
             }
         };
-        process_edge(0, 0, 1, 0); // up , 0, -1
-        process_edge(0, BoolChunk::side_len_b - 1, 1, 0); // down , 0, 1
-        process_edge(0, 0, 0, 1); // left , -1, 0
-        process_edge(BoolChunk::side_len_b - 1, 0, 0, 1); // right , 1, 0
+        static const int max = BoolChunk::side_len_b - 1;
+        Offset2D result_decorator(&result, {-chunk_pos.x, -chunk_pos.y}); //dumb
+        process_edge(chunk_pos.x       , chunk_pos.y      , 1, 0, result_decorator); // up , 0, -1
+        process_edge(chunk_pos.x       , chunk_pos.y + max, 1, 0, result_decorator); // down , 0, 1
+        process_edge(chunk_pos.x       , chunk_pos.y      , 0, 1, result_decorator); // left , -1, 0
+        process_edge(chunk_pos.x + max , chunk_pos.y      , 0, 1, result_decorator); // right , 1, 0
         // for unloaded:
-        process_edge(0, -1, 1, 0); // up , 0, -1
-        process_edge(0, BoolChunk::side_len_b, 1, 0); // down , 0, 1
-        process_edge(-1, 0, 0, 1); // left , -1, 0
-        process_edge(BoolChunk::side_len_b, 0, 0, 1); // right , 1, 0
+        process_edge(chunk_pos.x           , chunk_pos.y -1    , 1, 0, to); // up , 0, -1
+        process_edge(chunk_pos.x           , chunk_pos.y + max + 1, 1, 0, to); // down , 0, 1
+        process_edge(chunk_pos.x - 1       , chunk_pos.y       , 0, 1, to); // left , -1, 0
+        process_edge(chunk_pos.x + max + 1 , chunk_pos.y       , 0, 1, to); // right , 1, 0
+        // touching the hash tables is a bad idea
+        to.set_unpacked_chunk(chunk_pos, result);
     }
 }
-
-
-/**
- * @brief std::vector<Edge> findEdgesBetweenLiveAndUnaliveCells(const std::unordered_map<Vect2Dint, bool>& liveCells) {
-    std::vector<Edge> edges;
-    
-    // Define the 4 possible neighbors (left, right, top, bottom)
-    std::vector<Vect2Dint> neighbors = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
-    
-    // Iterate over all live cells
-    for (const auto& cellPair : liveCells) {
-        const Vect2Dint& liveCell = cellPair.first;
-        
-        // Check all 4 neighbors
-        for (const Vect2Dint& offset : neighbors) {
-            Vect2Dint neighborCell = {liveCell.x + offset.x, liveCell.y + offset.y};
-            
-            // If neighbor cell is not in the liveCells map, it is an unalive cell
-            if (liveCells.find(neighborCell) == liveCells.end()) {
-                edges.push_back({liveCell, neighborCell});
-            }
-        }
-    }
-    
-    return edges;
-}
- * 
- */
 
     // Diehard OLD
     //arr[front][11][13] = 1;
@@ -223,8 +200,15 @@ void set_glider(BoolGrid2D &&c)
 void print_board_compact(const BoolGrid2D &c, int viewport_size)
 {
     printf("\033c");
+
+    for(int i = 0; i < viewport_size; i++)
+    {
+        std::cout<<"-";
+    }
+    std::cout<<"\n";
     for(int y = 0; y<viewport_size; y+=2)
     {
+        std::cout<<"|";
         for(int x = 0; x<viewport_size; x++)
         {
             int opcode = c.get({x,y})+c.get({x,y+1})*2;
@@ -281,6 +265,8 @@ BoolChunkLoader* run_simulation(
     {
         if(graphics)
             print_board_compact(Offset2D(front, viewport_offset), viewport_size);
+        else if(i % 10 == 0)
+            std::cout<<"Generation, chunks: "<< i << " ," << back->getChunkMap().size() <<'\n';
         if(manual)
             std::cin.ignore(9999, '\n');
         tick_optimized(*front, *back);
@@ -359,8 +345,8 @@ void test_chunk_operations(BoolChunkLoader& from, BoolChunkLoader& to, const Vec
 // Very easy to verify processing integrity
 void set_vertical_pattern(BoolGrid2D&& chunk) {
     // Create a pattern of vertical lines: live line, two empty lines, repeating
-    for (int x = 0; x < 60; x += 3) {
-        for (int y = 0; y < 64; ++y) {
+    for (int x = -10; x < 70; x += 3) {
+        for (int y = -10; y < 70; ++y) {
             // Set a vertical line at every 3rd x position
             chunk.set({x, y}, true);
             chunk.set({x + 1, y}, false);
@@ -372,13 +358,15 @@ void set_vertical_pattern(BoolGrid2D&& chunk) {
 int main(int argc, char **argv)
 {
     BoolChunkLoader start, from, to;
-    //set_glider(Offset2D(&start, {-16, -16}));
+    set_glider(Offset2D(&start, {-16, -16}));
     //set_vertical_pattern(Offset2D(&start, {-32, -32}));
+    //set_vertical_pattern(Offset2D(&start, {-64, -64}));
     //start.set({-10, -10}, 1);
     //start.set({-10, 0}, 1);
     //start.set({0, -10}, 1);
-    set_acorn(Offset2D(&start, {0, 0}));
-    auto result = run_simulation(start, 0, 200, false, 64, {-32, -32}, false);
+    //set_acorn(Offset2D(&start, {0, 0}));
+    print_board_compact(Offset2D(&start, {-32,-32}), 64);
+    auto result = run_simulation(start, 0, 10000, false, 64, {-32, -32}, false);
     print_board_compact(Offset2D(result, {-32,-32}), 64);
     return 0;
 }
