@@ -1,9 +1,10 @@
-#include "vects.cpp"
 #include <stdlib.h>
 #include <unordered_map>
 #include <cstring>
 
-inline void set_bit(unsigned char &byte, int offset, bool val) 
+#include <vects.hpp>
+
+inline void set_bit(unsigned char &byte, const int offset, const bool val) 
 {
     // Helper
     if(val)
@@ -12,7 +13,7 @@ inline void set_bit(unsigned char &byte, int offset, bool val)
         byte = byte & ~(1 << offset);
 }
 
-inline bool get_bit(const unsigned char &byte, int offset)
+inline bool get_bit(const unsigned char &byte, const int offset)
 {
     //Helper
     return (byte >> offset) & 1;
@@ -32,11 +33,11 @@ public:
 class BoolChunk : public BoolGrid2D
 {
 public:
-    static const int chunk_size_b = 1 << 12; //4096b, one eight page 
-    static const int side_len_b = 1 << 6; // 64 rows or 8 octets
+    static const int chunk_size_b = 1 << 10; //4096b, one eight page 
+    static const int side_len_b = 1 << 5; // 64 rows or 8 octets
     static const int chunk_size = chunk_size_b / 8;
     static const int side_len = side_len_b / 8;
-    int updated = 0;
+    int live_cells = 0;
     int cold = 0;
 private:
 
@@ -62,9 +63,15 @@ public:
         // unsafe
         // math is y rows * bytes per row (side_len) + x/8 bytes + x%8 bits
         unsigned char *byte = &bytes[(pos.x >> 3) + pos.y * side_len];
-        return set_bit(*byte, pos.x & (8 - 1), val);
+        if(get_bit(*byte, pos.x & (8 - 1)) ^ val)
+        {
+            if(val)
+                live_cells++;
+            else
+                live_cells--;
+            set_bit(*byte, pos.x & (8 - 1), val);
+        }
     }
-
 };
 
 class UnpackedBoolChunk : public BoolGrid2D
@@ -76,11 +83,11 @@ private:
     bool cells[side_len][side_len];
 
 public:
-    int updated;
+    int live_cells;
     UnpackedBoolChunk()
     {
         // wipe with 0s
-        updated = 0;
+        live_cells = 0;
         memset(cells, 0, sizeof(cells));
     }
 
@@ -91,9 +98,14 @@ public:
 
     void set(const Vect2i &pos, bool val) override
     {
-        if(val == 1)
-            updated++;
-        cells[pos.x][pos.y] = val;
+        if(cells[pos.x][pos.y] ^ val)
+        {
+            if(val)
+                live_cells++;
+            else
+                live_cells--;
+            cells[pos.x][pos.y] = val;
+        }
     }
 };
 
@@ -101,13 +113,17 @@ class BoolChunkLoader : public BoolGrid2D
 {
 private:
     mutable std::unordered_map<Vect2i, BoolChunk*> chunks;
-    mutable Vect2i hot_pos;
-    mutable BoolChunk* hot_pointer;
+    mutable Vect2i hot_pos[2];
+    mutable BoolChunk* hot_pointer[2];
+    mutable int hot_iter = 0;
 public:
     BoolChunkLoader()
     {
-        hot_pointer = new BoolChunk();
-        chunks.insert({{0,0},hot_pointer});
+        hot_pointer[0] = new BoolChunk();
+        hot_pointer[1] = hot_pointer[0];
+        hot_pos[0] = Vect2i();
+        hot_pos[1] = hot_pos[0];
+        chunks.insert({{0,0},hot_pointer[0]});
     }
 
     // Very slow, use bulk instead
@@ -119,16 +135,19 @@ public:
         if(local_pos.y < 0)
             local_pos.y += BoolChunk::side_len_b;
         Vect2i chunk_pos = pos - local_pos;
-        if(chunk_pos == hot_pos)
-            return hot_pointer->get(local_pos);
+        if(chunk_pos == hot_pos[0])
+            return hot_pointer[0]->get(local_pos);
+        if(chunk_pos == hot_pos[1])
+            return hot_pointer[1]->get(local_pos);
         BoolChunk* chunk;
         auto querry = chunks.find(chunk_pos);
         if (querry == chunks.end())
             return 0;
         else
         {
-            hot_pos = querry->first;
-            hot_pointer = querry->second;
+            hot_iter = !hot_iter;
+            hot_pos[hot_iter] = querry->first;
+            hot_pointer[hot_iter] = querry->second;
             return querry->second->get(local_pos);
         }
     }
@@ -142,9 +161,14 @@ public:
         if(local_pos.y < 0)
             local_pos.y += BoolChunk::side_len_b;
         Vect2i chunk_pos = pos - local_pos;
-        if(chunk_pos == hot_pos)
+        if(chunk_pos == hot_pos[0])
         {
-            hot_pointer->set(local_pos, val);
+            hot_pointer[0]->set(local_pos, val);
+            return;
+        }
+        if(chunk_pos == hot_pos[1])
+        {
+            hot_pointer[1]->set(local_pos, val);
             return;
         }
         BoolChunk* chunk;
@@ -195,8 +219,31 @@ public:
         else
             chunk_p = querry->second;
         BoolChunk& chunk = *chunk_p;
-        if(uchunk.updated == 0 && chunk.updated == 0)
+        if(uchunk.live_cells == 0 && chunk.live_cells == 0) // im unsure how to hash chunk state
+        {
+            //return; // this optimization bellow sucks. 
+            if(chunk_pos == Vect2i({0,0}))
+                return;
+            delete chunk_p;
+            chunks.erase(chunk_pos);
+            if(chunk_pos == hot_pos[0])
+            {
+                hot_pos[0] = Vect2i(0,0);
+                hot_pointer[0] = chunks.at({0,0});
+                return;
+            }
+            if(chunk_pos == hot_pos[1])
+            {
+                hot_pos[1] = Vect2i(0,0);
+                hot_pointer[1] = chunks.at({0,0});
+                return;
+            }
             return;
+        }
+        else
+        {
+            chunk.live_cells = uchunk.live_cells;
+        }
         for(int y = 0; y < BoolChunk::side_len_b; y++)
         {
             for(int x = 0; x < BoolChunk::side_len; x++)
@@ -216,6 +263,11 @@ public:
         return chunks;
     }
 
+    ~BoolChunkLoader()
+    {
+        for(auto iter = chunks.begin(); iter != chunks.end(); ++iter)
+            delete iter->second;
+    }
 };
 
 template<class Interface, class ConcreteClass>
