@@ -101,9 +101,10 @@ void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
     {
         const Vect2i &chunk_pos = iter->first;
         const BoolChunk &chunk = *iter->second;
-        if(chunk.live_cells == 0)
-            continue;
         static const int max = BoolChunk::side_len_b - 1;
+        UnpackedBoolChunk result;
+        if(chunk.live_cells == 0)
+            to.set_unpacked_chunk(chunk_pos, result);
         auto process_edge = [&](int xoffset, int yoffset, int dx, int dy, BoolGrid2D& to)
         {
             auto sum_triect = [&](int x, int y) -> int
@@ -129,7 +130,11 @@ void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
                 conways_rules(to, from, sum, x, y);
             }
         };
-        UnpackedBoolChunk result;
+        // load/wake up neighbours
+        process_edge(chunk_pos.x           , chunk_pos.y -1    , 1, 0, to); // up , 0, -1
+        process_edge(chunk_pos.x           , chunk_pos.y + max + 1, 1, 0, to); // down , 0, 1
+        process_edge(chunk_pos.x - 1       , chunk_pos.y       , 0, 1, to); // left , -1, 0
+        process_edge(chunk_pos.x + max + 1 , chunk_pos.y       , 0, 1, to); // right , 1, 0
         // for insides
         process_chunk_insides(from.get_unpacked_chunk(chunk_pos), result);
         // for edges + loading
@@ -139,11 +144,6 @@ void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
         process_edge(chunk_pos.x       , chunk_pos.y      , 0, 1, result_decorator); // left , -1, 0
         process_edge(chunk_pos.x + max , chunk_pos.y      , 0, 1, result_decorator); // right , 1, 0
         to.set_unpacked_chunk(chunk_pos, result);
-        // load/wake up neighbours
-        process_edge(chunk_pos.x           , chunk_pos.y -1    , 1, 0, to); // up , 0, -1
-        process_edge(chunk_pos.x           , chunk_pos.y + max + 1, 1, 0, to); // down , 0, 1
-        process_edge(chunk_pos.x - 1       , chunk_pos.y       , 0, 1, to); // left , -1, 0
-        process_edge(chunk_pos.x + max + 1 , chunk_pos.y       , 0, 1, to); // right , 1, 0
     }
 }
 
@@ -316,7 +316,7 @@ int main(int argc, char **argv)
     //set_glider(Offset2D(&start, {32, 32}));
     //set_glider(Offset2D(&start, {-10, -10}));
     //set_vertical_pattern(Offset2D(&start, {-0, -0}));
-    //set_vertical_pattern(Offset2D(&start, {-64, -64}));
+    //set_vertical_pattern(Offset2D(&start, {0, 0}));
     //start.set({-10, -10}, 1);
     //start.set({-10, 0}, 1);
     //start.set({0, -10}, 1);
