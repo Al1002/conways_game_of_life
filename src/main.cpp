@@ -55,6 +55,32 @@ inline void conways_rules(BoolGrid2D &to, const BoolGrid2D &from, const int sum,
         to.set({x, y}, 0);
 }
 
+void process_chunk_insides_v2(const UnpackedBoolChunk &from, UnpackedBoolChunk &result)
+{
+    int triect[BoolChunk::side_len_b];
+    //setup, its fucked up bcs or the rolling buffer
+    for(int x = 0; x < BoolChunk::side_len_b; x++)
+    {
+        triect[x] = from.get({x, 0}) * 2 + from.get({x, 1});
+    }
+    for(int y = 1; y < BoolChunk::side_len_b - 1; y++)
+    {
+        for(int x = 1; x < BoolChunk::side_len_b - 1; x++)
+        {
+            // rolling buffer
+            triect[x] += from.get({x, y + 1}) - from.get({x, y - 1});
+            int sum = triect[x - 1] + triect[x] + triect[x + 1];
+            if(sum == 0) // if completely empty
+            {
+                result.set({x, y}, 0);
+                continue;
+            }
+            sum -= from.get({x, y});
+            conways_rules(result, from, sum, x, y);
+        }
+    }
+}
+
 // Iteration over chunk insides, thus removing cross-chunk reads (cache miss)
 void process_chunk_insides(const UnpackedBoolChunk &from, UnpackedBoolChunk &result)
 {
@@ -96,15 +122,23 @@ void print_board_compact(const BoolGrid2D &c, int viewport_size);
 void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
 {
     auto map = from.getChunkMap();
+    auto to_map = to.getChunkMap();
     // iterate over all chunks
     for(auto iter = map.begin(); iter != map.end(); ++iter)
     {
         const Vect2i &chunk_pos = iter->first;
         const BoolChunk &chunk = *iter->second;
         static const int max = BoolChunk::side_len_b - 1;
-        UnpackedBoolChunk result;
+        // skip
         if(chunk.live_cells == 0)
-            to.set_unpacked_chunk(chunk_pos, result);
+        {
+            auto target = to_map.find(chunk_pos);
+            if(target == to_map.end())
+                continue;
+            if(target->second->live_cells == 0)
+                continue;
+        }
+        UnpackedBoolChunk result;
         auto process_edge = [&](int xoffset, int yoffset, int dx, int dy, BoolGrid2D& to)
         {
             auto sum_triect = [&](int x, int y) -> int
@@ -117,7 +151,7 @@ void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
             triect[1] = sum_triect(x - dx, y - dy);
             triect[2] = sum_triect(x, y);
             for (int i = 0; i < BoolChunk::side_len_b; i++)
-            {
+            {   
                 x = xoffset + i * dx;
                 y = yoffset + i * dy;
                 triect[triect_iter++] = sum_triect(x + dx, y + dy);
@@ -137,7 +171,7 @@ void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
         process_edge(chunk_pos.x + max + 1 , chunk_pos.y       , 0, 1, to); // right , 1, 0
         // for insides
         process_chunk_insides(from.get_unpacked_chunk(chunk_pos), result);
-        // for edges + loading
+        // for edges
         Offset2D result_decorator(&result, {-chunk_pos.x, -chunk_pos.y}); //dumb
         process_edge(chunk_pos.x       , chunk_pos.y      , 1, 0, result_decorator); // up , 0, -1
         process_edge(chunk_pos.x       , chunk_pos.y + max, 1, 0, result_decorator); // down , 0, 1
@@ -241,7 +275,6 @@ void print_board_compact(const BoolGrid2D &c, int viewport_size)
     std::cout<<"\n";
 }
 
-
 // find way to have infinite growth (ex: view + mem chunk loader)
 // a custom chunk loader sounds funny
 // tldr on touching a cell, a bit in a big bit array
@@ -272,19 +305,15 @@ BoolChunkLoader* run_simulation(
         if(manual)
             std::cin.ignore(9999, '\n');
         tick_optimized(*front, *back);
+        back->cull();
         BoolChunkLoader *swap = front;
         front = back;
         back = swap;
         if(tick_delay && !manual)
             usleep(tick_delay * (1<<20));
     }
-    if(back == start)
-    {
-        BoolChunkLoader *swap = front;
-        front = back;
-        back = swap;
-    }
-    return back;
+    delete back;
+    return front;
 }
 
 void set_glider_b(BoolGrid2D &&c)
@@ -312,27 +341,44 @@ void set_vertical_pattern(BoolGrid2D&& chunk) {
 
 int main(int argc, char **argv)
 {
-    BoolChunkLoader start;
-    //set_glider(Offset2D(&start, {32, 32}));
-    //set_glider(Offset2D(&start, {-10, -10}));
-    //set_vertical_pattern(Offset2D(&start, {-0, -0}));
-    //set_vertical_pattern(Offset2D(&start, {0, 0}));
+    BoolChunkLoader* start = new BoolChunkLoader;
+    //set_glider(Offset2D(start, {32, 32}));
+    //set_glider(Offset2D(start, {10, 10}));
+    //set_vertical_pattern(Offset2D(start, {-0, -0}));
+    //set_vertical_pattern(Offset2D(start, {0, 0}));
     //start.set({-10, -10}, 1);
     //start.set({-10, 0}, 1);
     //start.set({0, -10}, 1);
-    set_acorn(Offset2D(&start, {0, 0}));
-    print_board_compact(Offset2D(&start, {0,0}), 64);
-    auto result = run_simulation(&start, 0, 10000, 0, 64, {0, 0}, 0);
-    print_board_compact(Offset2D(result, {0, 0}), 64);
-    int live_cnt = 0;
+    set_acorn(Offset2D(start, {0, 0}));
+    print_board_compact(Offset2D(start, {0,0}), 64);
+    auto result = run_simulation(start, 0, 10000, 0, 64, {-32, -32}, 0);
+    print_board_compact(Offset2D(result, {-32, -32}), 64);
     auto map = result->getChunkMap();
+    int live_cnt = 0;
+    int i = 0;
+    for(auto iter = map.begin(); iter != map.end(); ++iter)
+    {
+        print_board_compact(*iter->second, 32);
+        std::cout<<"N: " << i++ << ", dead?: " << iter->second->live_cells <<'\n';
+        usleep(0.2 * (1<<20));
+    }
     for(auto iter = map.begin(); iter != map.end(); ++iter)
         live_cnt += iter->second->live_cells;
-    std::cout<<"Final live count: " << live_cnt << '\n';
+    std::cout << "Final live count: " << live_cnt << '\n';
+    live_cnt = 0;
+    for(auto iter = map.begin(); iter != map.end(); ++iter)
+        live_cnt += iter->second->live_cells ? 0 : 1;
+    std::cout << "Final num dead chunks: " << live_cnt << '\n';
+    live_cnt = 0;
+    for(auto iter = map.begin(); iter != map.end(); ++iter)
+    {
+        live_cnt += iter->second->live_cells > 10 ? 1 : 0;
+    }
+    std::cout << "Final num simple chunks: " << live_cnt << '\n';
     return 0;
 }
 
-// Unrelated: why not write in C?
+// Unrelated: whs: 29y not write in C?
 // it has strict types, strict syntax, just write endpoints here
 
 /* Pipeline:

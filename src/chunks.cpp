@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <unordered_map>
-#include <cstring>
+#include <cstring> // for memset
+#include <vector>
 
 #include <vects.hpp>
 
@@ -33,12 +34,11 @@ public:
 class BoolChunk : public BoolGrid2D
 {
 public:
-    static const int chunk_size_b = 1 << 10; //4096b, one eight page 
-    static const int side_len_b = 1 << 5; // 64 rows or 8 octets
+    static const int side_len_b = 1 << 5; // 32 rows or 4 octets
+    static const int chunk_size_b = side_len_b * side_len_b; //1024b, 1/32 page size
     static const int chunk_size = chunk_size_b / 8;
     static const int side_len = side_len_b / 8;
     int live_cells = 0;
-    int cold = 0;
 private:
 
 public:
@@ -113,9 +113,25 @@ class BoolChunkLoader : public BoolGrid2D
 {
 private:
     mutable std::unordered_map<Vect2i, BoolChunk*> chunks;
+    mutable std::vector<BoolChunk*> dead;
     mutable Vect2i hot_pos[2];
     mutable BoolChunk* hot_pointer[2];
     mutable int hot_iter = 0;
+    inline BoolChunk* allocate_chunk()
+    {
+        if (!dead.empty())
+        {
+            BoolChunk* chunk = dead.back();
+            dead.pop_back();
+            chunk->live_cells = 0;
+            return chunk;
+        }
+        else
+        {
+            BoolChunk* chunk = new BoolChunk();
+            return chunk;
+        }
+    }
 public:
     BoolChunkLoader()
     {
@@ -177,7 +193,7 @@ public:
         {
             if(val == 0) // lazy loading not broken by set(0)
                 return;
-            chunk = new BoolChunk();
+            chunk = allocate_chunk();
             chunks.insert({chunk_pos, chunk});
         }
         else
@@ -190,7 +206,7 @@ public:
         UnpackedBoolChunk rval;
         auto querry = chunks.find(chunk_pos);
         if (querry == chunks.end())
-            return rval; // just shimmy it up
+            return rval;
         const BoolChunk& chunk = *querry->second;
         for(int y = 0; y < BoolChunk::side_len_b; y++)
         {
@@ -209,41 +225,27 @@ public:
 
     void set_unpacked_chunk(const Vect2i &chunk_pos, const UnpackedBoolChunk &uchunk)
     {
-        auto querry = chunks.find(chunk_pos);
         BoolChunk* chunk_p;
-        if (querry == chunks.end())
+        if (chunk_pos == hot_pos[0])
+            chunk_p = hot_pointer[0];
+        else if (chunk_pos == hot_pos[1])
+            chunk_p = hot_pointer[1];
+        else 
         {
-            chunk_p = new BoolChunk();
-            chunks.insert({chunk_pos, chunk_p});
+            auto querry = chunks.find(chunk_pos);
+            if (querry == chunks.end())
+            {
+                chunk_p = allocate_chunk();
+                chunks.insert({chunk_pos, chunk_p});
+            }
+            else
+                chunk_p = querry->second;
         }
-        else
-            chunk_p = querry->second;
         BoolChunk& chunk = *chunk_p;
         if(uchunk.live_cells == 0 && chunk.live_cells == 0) // im unsure how to hash chunk state
-        {
-            //return; // this optimization bellow sucks. 
-            if(chunk_pos == Vect2i({0,0}))
-                return;
-            delete chunk_p;
-            chunks.erase(chunk_pos);
-            if(chunk_pos == hot_pos[0])
-            {
-                hot_pos[0] = Vect2i(0,0);
-                hot_pointer[0] = chunks.at({0,0});
-                return;
-            }
-            if(chunk_pos == hot_pos[1])
-            {
-                hot_pos[1] = Vect2i(0,0);
-                hot_pointer[1] = chunks.at({0,0});
-                return;
-            }
-            return;
-        }
+            return; // this optimization bellow sucks. // removed it
         else
-        {
             chunk.live_cells = uchunk.live_cells;
-        }
         for(int y = 0; y < BoolChunk::side_len_b; y++)
         {
             for(int x = 0; x < BoolChunk::side_len; x++)
@@ -263,10 +265,30 @@ public:
         return chunks;
     }
 
+    void cull()
+    {
+        for (auto iter = chunks.begin(); iter != chunks.end(); )
+        {
+            if (iter->second->live_cells == 0)
+            {
+                // Save the iterator's next position
+                auto to_delete = iter++;
+                dead.push_back(to_delete->second);
+                chunks.erase(to_delete->first);
+            }
+            else
+            {
+                ++iter;
+            }
+        }
+    }
+
     ~BoolChunkLoader()
     {
         for(auto iter = chunks.begin(); iter != chunks.end(); ++iter)
             delete iter->second;
+        for(auto iter = dead.begin(); iter != dead.end(); ++iter)
+            delete *iter.base();
     }
 };
 
@@ -285,3 +307,4 @@ class ChunkLoader : public Interface
     static_assert(std::is_base_of<Vect, Key>::value, "Key must be defined over a vector space");
     mutable std::unordered_map<Key, Chunk> chunk_map;
 };
+
