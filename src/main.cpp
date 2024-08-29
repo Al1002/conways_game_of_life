@@ -129,15 +129,6 @@ void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
         const Vect2i &chunk_pos = iter->first;
         const BoolChunk &chunk = *iter->second;
         static const int max = BoolChunk::side_len_b - 1;
-        // skip
-        if(chunk.live_cells == 0)
-        {
-            auto target = to_map.find(chunk_pos);
-            if(target == to_map.end())
-                continue;
-            if(target->second->live_cells == 0)
-                continue;
-        }
         UnpackedBoolChunk result;
         auto process_edge = [&](int xoffset, int yoffset, int dx, int dy, BoolGrid2D& to)
         {
@@ -164,13 +155,17 @@ void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
                 conways_rules(to, from, sum, x, y);
             }
         };
-        // load/wake up neighbours
-        process_edge(chunk_pos.x           , chunk_pos.y -1    , 1, 0, to); // up , 0, -1
-        process_edge(chunk_pos.x           , chunk_pos.y + max + 1, 1, 0, to); // down , 0, 1
-        process_edge(chunk_pos.x - 1       , chunk_pos.y       , 0, 1, to); // left , -1, 0
-        process_edge(chunk_pos.x + max + 1 , chunk_pos.y       , 0, 1, to); // right , 1, 0
-        // for insides
-        process_chunk_insides(from.get_unpacked_chunk(chunk_pos), result);
+        // skip
+        if(chunk.live_cells != 0)
+        {
+            // load/wake up neighbours
+            process_edge(chunk_pos.x           , chunk_pos.y -1    , 1, 0, to); // up , 0, -1
+            process_edge(chunk_pos.x           , chunk_pos.y + max + 1, 1, 0, to); // down , 0, 1
+            process_edge(chunk_pos.x - 1       , chunk_pos.y       , 0, 1, to); // left , -1, 0
+            process_edge(chunk_pos.x + max + 1 , chunk_pos.y       , 0, 1, to); // right , 1, 0
+            // for insides
+            process_chunk_insides(from.get_unpacked_chunk(chunk_pos), result);
+        }
         // for edges
         Offset2D result_decorator(&result, {-chunk_pos.x, -chunk_pos.y}); //dumb
         process_edge(chunk_pos.x       , chunk_pos.y      , 1, 0, result_decorator); // up , 0, -1
@@ -361,7 +356,7 @@ int main(int argc, char **argv)
     set_acorn(Offset2D(start, {0, 0}));
     print_board_compact(Offset2D(start, {0,0}), 64);
     usleep(1 * (1<<20));
-    auto result = run_simulation(start, 0, 1000, 0, 64, {0, 0}, 0);
+    auto result = run_simulation(start, 0, 10000, 0, 64, {0, 0}, 0);
     print_board_compact(Offset2D(result, {0, 0}), 64);
     auto map = result->getChunkMap();
     int live_cnt = 0;
