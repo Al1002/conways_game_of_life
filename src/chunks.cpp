@@ -38,7 +38,7 @@ public:
     static const int chunk_size_b = side_len_b * side_len_b; //1024b, 1/32 page size
     static const int chunk_size = chunk_size_b / 8;
     static const int side_len = side_len_b / 8;
-    int live_cells = 0;
+    int live_cells;
 private:
 
 public:
@@ -47,6 +47,7 @@ public:
     BoolChunk()
     {
         // wipe with 0s
+        live_cells = 0;
         memset(bytes, 0, sizeof(bytes));
     }
 
@@ -71,6 +72,12 @@ public:
                 live_cells--;
             set_bit(*byte, pos.x & (8 - 1), val);
         }
+    }
+
+    inline void clear()
+    {
+        live_cells = 0;
+        memset(bytes, 0, sizeof(bytes));
     }
 };
 
@@ -267,21 +274,51 @@ public:
 
     void cull()
     {
-        for (auto iter = chunks.begin(); iter != chunks.end(); )
+        for(auto iter = chunks.begin(); iter != chunks.end(); )
         {
-            if (iter->second->live_cells == 0)
+            if(iter->first == Vect2i(0, 0))
             {
-                // Save the iterator's next position
+                hot_pointer[0] = iter->second;
+                hot_pointer[1] = hot_pointer[0];
+                hot_pos[0] = Vect2i(0, 0);
+                hot_pos[1] = hot_pos[0];
+            }
+            if(iter->second->live_cells == 0)
+            {
                 auto to_delete = iter++;
                 dead.push_back(to_delete->second);
-                chunks.erase(to_delete->first);
+                chunks.erase(to_delete);
             }
             else
-            {
                 ++iter;
-            }
         }
     }
+
+    void kill(const Vect2i &chunk_pos)
+    {
+        if(chunk_pos == Vect2i(0, 0))
+            return;
+        auto querry = chunks.find(chunk_pos);
+        if(querry != chunks.end())
+        {
+            BoolChunk &chunk = *querry->second;
+            if(hot_pointer[0] == &chunk)
+            {
+                hot_pos[0] = Vect2i(0, 0);
+                hot_pointer[0] = chunks.at({0, 0});
+            }
+            if(hot_pointer[1] == &chunk)
+            {
+                hot_pos[1] = Vect2i(0, 0);
+                hot_pointer[1] = chunks.at({0, 0});
+            }
+            if(chunk.live_cells != 0)
+                chunk.clear();
+            dead.push_back(&chunk);
+            chunks.erase(querry);
+        }
+    }
+
 
     ~BoolChunkLoader()
     {

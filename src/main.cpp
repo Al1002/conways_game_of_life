@@ -275,15 +275,24 @@ void print_board_compact(const BoolGrid2D &c, int viewport_size)
     std::cout<<"\n";
 }
 
-// find way to have infinite growth (ex: view + mem chunk loader)
-// a custom chunk loader sounds funny
-// tldr on touching a cell, a bit in a big bit array
-// must be touched. touching it intercepts and invokes a mem load
-// if the bit was 0 (unloaded chunk)
-// assume a page is 100% used so only need pages
-// 4096B = (64*2)^2*2b, aka 128x128 double bit masks.
-// optimization could be: as processing is single thread,
-// just use one static page for these things (note, border includes neighbor loading...)
+//FIXME
+void cull(BoolChunkLoader *front, BoolChunkLoader *back)
+{
+    auto map = front->getChunkMap();
+    std::vector<Vect2i> to_delete;
+    for (auto iter = map.begin(); iter != map.end(); )
+    {
+        if (iter->second->live_cells == 0)
+            to_delete.push_back(iter->first);
+        ++iter;
+    }
+    while(!to_delete.empty())
+    {
+        front->kill(to_delete.back());
+        back->kill(to_delete.back());
+        to_delete.pop_back();
+    }
+}
 
 BoolChunkLoader* run_simulation(
     BoolChunkLoader* start,
@@ -305,10 +314,10 @@ BoolChunkLoader* run_simulation(
         if(manual)
             std::cin.ignore(9999, '\n');
         tick_optimized(*front, *back);
-        back->cull();
         BoolChunkLoader *swap = front;
         front = back;
         back = swap;
+        cull(front, back);
         if(tick_delay && !manual)
             usleep(tick_delay * (1<<20));
     }
@@ -342,7 +351,7 @@ void set_vertical_pattern(BoolGrid2D&& chunk) {
 int main(int argc, char **argv)
 {
     BoolChunkLoader* start = new BoolChunkLoader;
-    //set_glider(Offset2D(start, {32, 32}));
+    //set_glider(Offset2D(start, {0, 0}));
     //set_glider(Offset2D(start, {10, 10}));
     //set_vertical_pattern(Offset2D(start, {-0, -0}));
     //set_vertical_pattern(Offset2D(start, {0, 0}));
@@ -351,8 +360,9 @@ int main(int argc, char **argv)
     //start.set({0, -10}, 1);
     set_acorn(Offset2D(start, {0, 0}));
     print_board_compact(Offset2D(start, {0,0}), 64);
-    auto result = run_simulation(start, 0, 10000, 0, 64, {-32, -32}, 0);
-    print_board_compact(Offset2D(result, {-32, -32}), 64);
+    usleep(1 * (1<<20));
+    auto result = run_simulation(start, 0, 1000, 0, 64, {0, 0}, 0);
+    print_board_compact(Offset2D(result, {0, 0}), 64);
     auto map = result->getChunkMap();
     int live_cnt = 0;
     int i = 0;
@@ -362,9 +372,11 @@ int main(int argc, char **argv)
         std::cout<<"N: " << i++ << ", dead?: " << iter->second->live_cells <<'\n';
         usleep(0.2 * (1<<20));
     }
+    print_board_compact(Offset2D(result, {0, 0}), 64);
     for(auto iter = map.begin(); iter != map.end(); ++iter)
         live_cnt += iter->second->live_cells;
     std::cout << "Final live count: " << live_cnt << '\n';
+    std::cout << "Final num chunks: " << map.size() << '\n';
     live_cnt = 0;
     for(auto iter = map.begin(); iter != map.end(); ++iter)
         live_cnt += iter->second->live_cells ? 0 : 1;
