@@ -166,7 +166,7 @@ void tick_optimized(BoolChunkLoader &from, BoolChunkLoader &to)
             // for insides
             process_chunk_insides(from.get_unpacked_chunk(chunk_pos), result);
         }
-        // for edges
+        // for inside edges
         Offset2D result_decorator(&result, {-chunk_pos.x, -chunk_pos.y}); //dumb
         process_edge(chunk_pos.x       , chunk_pos.y      , 1, 0, result_decorator); // up , 0, -1
         process_edge(chunk_pos.x       , chunk_pos.y + max, 1, 0, result_decorator); // down , 0, 1
@@ -227,6 +227,21 @@ void set_glider(BoolGrid2D &&c)
     c.set(Vect2i(2,3), 1);
     c.set(Vect2i(3,3), 1);
 }
+
+void set_glider_b(BoolGrid2D &&c)
+{
+    // Glider
+    c.set(Vect2i(1,2), 1);
+    c.set(Vect2i(2,3), 1);
+    c.set(Vect2i(3,1), 1);
+    c.set(Vect2i(3,2), 1);
+    c.set(Vect2i(3,3), 1);
+}
+
+// Gosper glider gun
+//x = 36, y = 9, rule = B3/S23, but the rule is always Life so...
+//24bo$22bobo$12b2o6b2o12b2o$11bo3bo4b2o12b2o$2o8bo5bo3b2o$2o8bo3bob2o4b
+//obo$10bo5bo7bo$11bo3bo$12b2o!
 
 void print_board_compact(const BoolGrid2D &c, int viewport_size)
 {
@@ -320,16 +335,6 @@ BoolChunkLoader* run_simulation(
     return front;
 }
 
-void set_glider_b(BoolGrid2D &&c)
-{
-    // Glider
-    c.set(Vect2i(1,2), 1);
-    c.set(Vect2i(2,3), 1);
-    c.set(Vect2i(3,1), 1);
-    c.set(Vect2i(3,2), 1);
-    c.set(Vect2i(3,3), 1);
-}
-
 // Very easy to verify processing integrity
 void set_vertical_pattern(BoolGrid2D&& chunk) {
     // Create a pattern of vertical lines: live line, two empty lines, repeating
@@ -347,16 +352,11 @@ int main(int argc, char **argv)
 {
     BoolChunkLoader* start = new BoolChunkLoader;
     //set_glider(Offset2D(start, {0, 0}));
-    //set_glider(Offset2D(start, {10, 10}));
-    //set_vertical_pattern(Offset2D(start, {-0, -0}));
     //set_vertical_pattern(Offset2D(start, {0, 0}));
-    //start.set({-10, -10}, 1);
-    //start.set({-10, 0}, 1);
-    //start.set({0, -10}, 1);
     set_acorn(Offset2D(start, {0, 0}));
     print_board_compact(Offset2D(start, {0,0}), 64);
     usleep(1 * (1<<20));
-    auto result = run_simulation(start, 0, 10000, 0, 64, {0, 0}, 0);
+    auto result = run_simulation(start, 0, 100000, 0, 64, {0, 0}, 0);
     print_board_compact(Offset2D(result, {0, 0}), 64);
     auto map = result->getChunkMap();
     int live_cnt = 0;

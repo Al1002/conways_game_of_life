@@ -61,9 +61,11 @@ public:
         return *this;
     }
 
-    size_t hash() const
+    inline size_t hash() const
     {
-        return ~(std::hash<Num>()(x) ^ ~(std::hash<Num>()(y))); 
+        size_t h1 = std::hash<Num>()(x);
+        size_t h2 = std::hash<Num>()(y);
+        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2)); // Murphys combination
     }
     inline bool operator==(const Vect2& other) const
     {
