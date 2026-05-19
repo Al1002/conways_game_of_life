@@ -2,7 +2,6 @@
 #include <unordered_map>
 #include <cstring> // for memset
 #include <vector>
-
 #include <vects.hpp>
 
 inline void set_bit(unsigned char &byte, const int offset, const bool val) 

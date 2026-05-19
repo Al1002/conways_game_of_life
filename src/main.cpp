@@ -1,4 +1,3 @@
-#include <SDL2/SDL.h>
 #include <iostream>
 #include <unistd.h>
 #include "chunks.cpp"

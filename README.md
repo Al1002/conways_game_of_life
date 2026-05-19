@@ -2,11 +2,11 @@ A C++ implementation of Conway's game of life.
 
 Includes some generic classes of questionable quality + Template Meta Programming.
 
-Use  `cmake -S src -B build` to build
+Use  `cmake -S . -B build` to write the build instructions
 
-and
+Use `cmake --build build` to build
 
-`./build/src/main` to run
+Use `./build/src/main` to run
 
 To change, manually change the call to `run_simulation()`.
 May also be used outside of this code, for example, with a GUI.
